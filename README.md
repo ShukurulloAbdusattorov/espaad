@@ -4,7 +4,7 @@ A lightweight browser-based 2D sword game.
 
 ## Run locally
 
-Open `/home/runner/work/espaad/espaad/index.html` in a browser.
+Open `index.html` in your browser.
 
 ## Controls
 
