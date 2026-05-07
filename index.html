@@ -33,6 +33,13 @@
   <script>
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
+    const MIN_ENEMY_SPEED = 85;
+    const ENEMY_SPEED_VARIANCE = 40;
+    const MIN_SPAWN_INTERVAL = 0.4;
+    const BASE_SPAWN_INTERVAL = 1.1;
+    const SPAWN_ACCELERATION = 0.015;
+    const ATTACK_RANGE = 52;
+    const ATTACK_ARC = Math.PI * 0.85;
 
     const keys = new Set();
     document.addEventListener('keydown', (e) => {
@@ -81,7 +88,7 @@
 
     function spawnEnemy() {
       const p = randomSpawnPoint();
-      enemies.push({ x: p.x, y: p.y, r: 12, speed: 85 + Math.random() * 40, hitTimer: 0 });
+      enemies.push({ x: p.x, y: p.y, r: 12, speed: MIN_ENEMY_SPEED + Math.random() * ENEMY_SPEED_VARIANCE, hitTimer: 0 });
     }
 
     function normalize(vx, vy) {
@@ -119,7 +126,7 @@
       spawnTimer -= dt;
       if (spawnTimer <= 0) {
         spawnEnemy();
-        spawnTimer = Math.max(0.4, 1.1 - score * 0.015);
+        spawnTimer = Math.max(MIN_SPAWN_INTERVAL, BASE_SPAWN_INTERVAL - score * SPAWN_ACCELERATION);
       }
 
       for (const enemy of enemies) {
@@ -139,18 +146,16 @@
       }
 
       if (player.attackTimer > 0) {
-        const slashRange = 52;
-        const slashArc = Math.PI * 0.85;
         enemies = enemies.filter((enemy) => {
           const dx = enemy.x - player.x;
           const dy = enemy.y - player.y;
           const dist = Math.hypot(dx, dy);
-          if (dist > slashRange) return true;
+          if (dist > ATTACK_RANGE) return true;
 
           const dir = normalize(dx, dy);
           const facingDot = player.facing.x * dir.x + player.facing.y * dir.y;
           const angle = Math.acos(Math.max(-1, Math.min(1, facingDot)));
-          if (angle <= slashArc / 2) {
+          if (angle <= ATTACK_ARC / 2) {
             score += 1;
             return false;
           }
@@ -167,10 +172,9 @@
 
       if (player.attackTimer > 0) {
         const angle = Math.atan2(player.facing.y, player.facing.x);
-        const arc = Math.PI * 0.85;
         ctx.beginPath();
         ctx.moveTo(player.x, player.y);
-        ctx.arc(player.x, player.y, 52, angle - arc / 2, angle + arc / 2);
+        ctx.arc(player.x, player.y, ATTACK_RANGE, angle - ATTACK_ARC / 2, angle + ATTACK_ARC / 2);
         ctx.closePath();
         ctx.fillStyle = 'rgba(255, 223, 0, 0.24)';
         ctx.fill();
@@ -214,10 +218,16 @@
     }
 
     let last = performance.now();
+    let accumulator = 0;
+    const FIXED_TIMESTEP = 1 / 120;
     function loop(now) {
-      const dt = Math.min(0.033, (now - last) / 1000);
+      const dt = Math.min(0.25, (now - last) / 1000);
       last = now;
-      update(dt);
+      accumulator += dt;
+      while (accumulator >= FIXED_TIMESTEP) {
+        update(FIXED_TIMESTEP);
+        accumulator -= FIXED_TIMESTEP;
+      }
       draw();
       requestAnimationFrame(loop);
     }
