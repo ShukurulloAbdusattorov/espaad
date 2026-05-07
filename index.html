@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Espaad 2D Sword Game</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #111;
+      font-family: Arial, sans-serif;
+      color: #f6f6f6;
+    }
+    .game-wrap { text-align: center; }
+    canvas {
+      background: #1e1e1e;
+      border: 2px solid #3a3a3a;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.4);
+    }
+    .help { margin-top: 8px; font-size: 14px; opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <div class="game-wrap">
+    <canvas id="game" width="800" height="480" aria-label="Espaad 2D sword game"></canvas>
+    <p class="help">Move: WASD / Arrow Keys · Attack: Space · Restart: R</p>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    const keys = new Set();
+    document.addEventListener('keydown', (e) => {
+      keys.add(e.key.toLowerCase());
+      if (e.key === ' ') e.preventDefault();
+      if (e.key.toLowerCase() === 'r' && gameOver) resetGame();
+    });
+    document.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+
+    const player = {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      r: 14,
+      speed: 220,
+      hp: 5,
+      facing: { x: 1, y: 0 },
+      attackCooldown: 0,
+      attackTimer: 0
+    };
+
+    let enemies = [];
+    let spawnTimer = 0;
+    let score = 0;
+    let gameOver = false;
+
+    function resetGame() {
+      player.x = canvas.width / 2;
+      player.y = canvas.height / 2;
+      player.hp = 5;
+      player.facing = { x: 1, y: 0 };
+      player.attackCooldown = 0;
+      player.attackTimer = 0;
+      enemies = [];
+      spawnTimer = 0;
+      score = 0;
+      gameOver = false;
+    }
+
+    function randomSpawnPoint() {
+      const edge = Math.floor(Math.random() * 4);
+      if (edge === 0) return { x: Math.random() * canvas.width, y: -15 };
+      if (edge === 1) return { x: canvas.width + 15, y: Math.random() * canvas.height };
+      if (edge === 2) return { x: Math.random() * canvas.width, y: canvas.height + 15 };
+      return { x: -15, y: Math.random() * canvas.height };
+    }
+
+    function spawnEnemy() {
+      const p = randomSpawnPoint();
+      enemies.push({ x: p.x, y: p.y, r: 12, speed: 85 + Math.random() * 40, hitTimer: 0 });
+    }
+
+    function normalize(vx, vy) {
+      const len = Math.hypot(vx, vy) || 1;
+      return { x: vx / len, y: vy / len };
+    }
+
+    function update(dt) {
+      if (gameOver) return;
+
+      let mx = 0;
+      let my = 0;
+      if (keys.has('arrowleft') || keys.has('a')) mx -= 1;
+      if (keys.has('arrowright') || keys.has('d')) mx += 1;
+      if (keys.has('arrowup') || keys.has('w')) my -= 1;
+      if (keys.has('arrowdown') || keys.has('s')) my += 1;
+
+      if (mx || my) {
+        const move = normalize(mx, my);
+        player.facing = move;
+        player.x += move.x * player.speed * dt;
+        player.y += move.y * player.speed * dt;
+      }
+
+      player.x = Math.max(player.r, Math.min(canvas.width - player.r, player.x));
+      player.y = Math.max(player.r, Math.min(canvas.height - player.r, player.y));
+
+      player.attackCooldown = Math.max(0, player.attackCooldown - dt);
+      player.attackTimer = Math.max(0, player.attackTimer - dt);
+      if (keys.has(' ') && player.attackCooldown <= 0) {
+        player.attackCooldown = 0.35;
+        player.attackTimer = 0.12;
+      }
+
+      spawnTimer -= dt;
+      if (spawnTimer <= 0) {
+        spawnEnemy();
+        spawnTimer = Math.max(0.4, 1.1 - score * 0.015);
+      }
+
+      for (const enemy of enemies) {
+        const dir = normalize(player.x - enemy.x, player.y - enemy.y);
+        enemy.x += dir.x * enemy.speed * dt;
+        enemy.y += dir.y * enemy.speed * dt;
+        enemy.hitTimer = Math.max(0, enemy.hitTimer - dt);
+
+        const dx = player.x - enemy.x;
+        const dy = player.y - enemy.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < player.r + enemy.r && enemy.hitTimer <= 0) {
+          player.hp -= 1;
+          enemy.hitTimer = 0.9;
+          if (player.hp <= 0) gameOver = true;
+        }
+      }
+
+      if (player.attackTimer > 0) {
+        const slashRange = 52;
+        const slashArc = Math.PI * 0.85;
+        enemies = enemies.filter((enemy) => {
+          const dx = enemy.x - player.x;
+          const dy = enemy.y - player.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > slashRange) return true;
+
+          const dir = normalize(dx, dy);
+          const facingDot = player.facing.x * dir.x + player.facing.y * dir.y;
+          const angle = Math.acos(Math.max(-1, Math.min(1, facingDot)));
+          if (angle <= slashArc / 2) {
+            score += 1;
+            return false;
+          }
+          return true;
+        });
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#262626';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      if (player.attackTimer > 0) {
+        const angle = Math.atan2(player.facing.y, player.facing.x);
+        const arc = Math.PI * 0.85;
+        ctx.beginPath();
+        ctx.moveTo(player.x, player.y);
+        ctx.arc(player.x, player.y, 52, angle - arc / 2, angle + arc / 2);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(255, 223, 0, 0.24)';
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
+      ctx.fillStyle = '#37d67a';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(player.x, player.y);
+      ctx.lineTo(player.x + player.facing.x * 20, player.y + player.facing.y * 20);
+      ctx.strokeStyle = '#d3ffe4';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      for (const enemy of enemies) {
+        ctx.beginPath();
+        ctx.arc(enemy.x, enemy.y, enemy.r, 0, Math.PI * 2);
+        ctx.fillStyle = enemy.hitTimer > 0 ? '#b85c5c' : '#ff6b6b';
+        ctx.fill();
+      }
+
+      ctx.fillStyle = '#fff';
+      ctx.font = '18px Arial';
+      ctx.fillText(`Score: ${score}`, 14, 26);
+      ctx.fillText(`HP: ${Math.max(0, player.hp)}`, 14, 50);
+
+      if (gameOver) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.62)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 42px Arial';
+        ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2 - 6);
+        ctx.font = '20px Arial';
+        ctx.fillText(`Final Score: ${score} · Press R to Restart`, canvas.width / 2, canvas.height / 2 + 30);
+        ctx.textAlign = 'left';
+      }
+    }
+
+    let last = performance.now();
+    function loop(now) {
+      const dt = Math.min(0.033, (now - last) / 1000);
+      last = now;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    resetGame();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
